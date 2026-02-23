@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, AlertCircle } from 'lucide-react';
+import { Save, AlertCircle, Settings as SettingsIcon, RefreshCw, ArrowLeft } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -70,18 +70,61 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
-  if (!settings) return <div>Error loading settings</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        <div className="text-center text-white">
+          <RefreshCw className="animate-spin mx-auto mb-4 text-blue-500" size={48} />
+          <p className="text-xl">Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!settings) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        <div className="text-center text-white">
+          <AlertCircle className="mx-auto mb-4 text-red-500" size={48} />
+          <p className="text-xl">Error loading settings</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-all"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4 lg:p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Bot Settings</h1>
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6 lg:mb-8">
+          <a 
+            href="/dashboard" 
+            className="p-2 hover:bg-gray-700 rounded-lg transition-all"
+            title="Back to Dashboard"
+          >
+            <ArrowLeft size={24} />
+          </a>
+          <h1 className="text-3xl lg:text-4xl font-bold flex items-center gap-3">
+            <SettingsIcon className="text-blue-500" size={36} />
+            Bot Settings
+          </h1>
+        </div>
 
+        {/* Message Alert */}
         {message && (
-          <div className={`p-4 rounded mb-6 flex items-center gap-2 ${message.includes('✅') ? 'bg-green-900' : 'bg-red-900'}`}>
+          <div className={`p-4 rounded-lg mb-6 flex items-center gap-2 border ${
+            message.includes('✅') 
+              ? 'bg-green-900 border-green-700' 
+              : 'bg-red-900 border-red-700'
+          }`}>
             <AlertCircle size={20} />
-            {message}
+            <span>{message}</span>
           </div>
         )}
 

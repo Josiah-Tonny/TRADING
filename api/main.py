@@ -97,7 +97,11 @@ async def get_bot_status():
     """Get current bot status and account information"""
     try:
         # Load trade history from JSON (works on Vercel)
-        trades_file = Path("logs/trades.json")
+        # Use parent directory since API is in /api folder
+        trades_file = Path("../logs/trades.json")
+        if not trades_file.exists():
+            trades_file = Path("logs/trades.json")  # Try current directory
+        
         total_trades = 0
         win_count = 0
         total_profit = 0
@@ -172,7 +176,9 @@ async def get_open_trades():
     """Get all open trades"""
     try:
         # First try to load from JSON (works on Vercel)
-        trades_file = Path("logs/trades.json")
+        trades_file = Path("../logs/trades.json")
+        if not trades_file.exists():
+            trades_file = Path("logs/trades.json")
         trades = []
         
         if trades_file.exists():
@@ -242,7 +248,9 @@ async def get_symbol_stats():
         open_by_symbol = {}
         
         # Load trade history for win rate calculation
-        trades_file = Path("logs/trades.json")
+        trades_file = Path("../logs/trades.json")
+        if not trades_file.exists():
+            trades_file = Path("logs/trades.json")
         all_trades = {}
         
         if trades_file.exists():

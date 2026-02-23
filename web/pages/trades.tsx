@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, Activity, Filter } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Filter, DollarSign, Award, BarChart3, RefreshCw } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -21,22 +21,25 @@ export default function TradesPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, open, closed
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchTrades = async () => {
+    try {
+      setRefreshing(true);
+      const res = await fetch(`${API_URL}/api/trades`);
+      if (res.ok) {
+        const data = await res.json();
+        setTrades(data);
+      }
+    } catch (error) {
+      console.error('Error fetching trades:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchTrades = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/trades`);
-        if (res.ok) {
-          const data = await res.json();
-          setTrades(data);
-        }
-      } catch (error) {
-        console.error('Error fetching trades:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchTrades();
     const interval = setInterval(fetchTrades, 5000);
     return () => clearInterval(interval);
@@ -47,19 +50,30 @@ export default function TradesPage() {
     return t.status.toLowerCase() === filter;
   });
 
+  // Calculate statistics
+  const totalProfit = filteredTrades.reduce((sum, t) => sum + t.profit, 0);
+  const avgProfit = filteredTrades.length > 0 ? totalProfit / filteredTrades.length : 0;
+  const winRate = filteredTrades.length > 0 
+    ? (filteredTrades.filter(t => t.profit > 0).length / filteredTrades.length * 100) 
+    : 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900">
-        <p className="text-white">Loading trades...</p>
+        <div className="text-center">
+          <RefreshCw className="animate-spin mx-auto mb-4 text-blue-500" size={48} />
+          <p className="text-white text-xl">Loading trades...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4 lg:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-4xl font-bold flex items-center gap-3">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between mb-6 lg:mb-8 gap-4">
+          <h1 className="text-3xl lg:text-4xl font-bold flex items-center gap-3">
             <Activity className="text-blue-500" size={36} />
             Trade History
           </h1>
@@ -67,37 +81,77 @@ export default function TradesPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg transition-all ${
+              className={`px-4 py-2 rounded-lg transition-all font-medium ${
                 filter === 'all'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-blue-600 text-white shadow-lg'
                   : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
               }`}
             >
-              All
+              All ({trades.length})
             </button>
             <button
               onClick={() => setFilter('open')}
-              className={`px-4 py-2 rounded-lg transition-all ${
+              className={`px-4 py-2 rounded-lg transition-all font-medium ${
                 filter === 'open'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-blue-600 text-white shadow-lg'
                   : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
               }`}
             >
-              Open
+              Open ({trades.filter(t => t.status === 'OPEN').length})
             </button>
             <button
               onClick={() => setFilter('closed')}
-              className={`px-4 py-2 rounded-lg transition-all ${
+              className={`px-4 py-2 rounded-lg transition-all font-medium ${
                 filter === 'closed'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-blue-600 text-white shadow-lg'
                   : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
               }`}
             >
-              Closed
+              Closed ({trades.filter(t => t.status === 'CLOSED').length})
+            </button>
+            <button
+              onClick={fetchTrades}
+              disabled={refreshing}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-all flex items-center gap-2"
+              title="Refresh data"
+            >
+              <RefreshCw className={refreshing ? 'animate-spin' : ''} size={18} />
             </button>
           </div>
         </div>
 
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 mb-6 lg:mb-8">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-6 rounded-xl shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <BarChart3 className="text-white opacity-80" size={32} />
+            </div>
+            <p className="text-sm text-blue-100 mb-1">Total Trades</p>
+            <p className="text-3xl font-bold">{filteredTrades.length}</p>
+          </div>
+
+          <div className={`bg-gradient-to-br ${totalProfit >= 0 ? 'from-green-600 to-green-700' : 'from-red-600 to-red-700'} p-6 rounded-xl shadow-lg`}>
+            <div className="flex items-center justify-between mb-2">
+              <DollarSign className="text-white opacity-80" size={32} />
+            </div>
+            <p className="text-sm text-white opacity-90 mb-1">Total P/L</p>
+            <p className="text-3xl font-bold">${totalProfit.toFixed(2)}</p>
+            <p className="text-sm opacity-75">Avg: ${avgProfit.toFixed(2)}</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-600 to-purple-700 p-6 rounded-xl shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <Award className="text-white opacity-80" size={32} />
+            </div>
+            <p className="text-sm text-purple-100 mb-1">Win Rate</p>
+            <p className="text-3xl font-bold">{winRate.toFixed(1)}%</p>
+            <p className="text-sm opacity-75">
+              {filteredTrades.filter(t => t.profit > 0).length} wins / {filteredTrades.filter(t => t.profit < 0).length} losses
+            </p>
+          </div>
+        </div>
+
+        {/* Trades Table */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
