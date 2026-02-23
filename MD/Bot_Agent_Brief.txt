@@ -1,0 +1,366 @@
+================================================================================
+MT5 TRADING BOT — AGENT DEVELOPMENT BRIEF
+Feature Requests & Confirmation Checklist
+Date: February 17, 2026 | Account: Deriv-Demo #5974722
+================================================================================
+
+
+================================================================================
+SECTION 1: CONTEXT & CURRENT BOT STATE
+================================================================================
+
+The bot has recently been updated following a log analysis that identified several
+critical issues. The fixes below have been applied to the codebase and need to be
+confirmed as correctly implemented before live trading resumes.
+
+Bot Type    : MT5 Multi-Symbol — M15 Swing + M1 Scalp
+Account     : Deriv-Demo #5974722 | Balance: ~$41.05 (down from $110.25)
+Symbols     : EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD, NZDUSD, USDCAD, EURJPY, GBPJPY, XAUUSD
+Risk        : 1% per trade (max $1.50) | Max open risk: $5.00 | Session DD cap: $0.90
+Mode        : M15 Swing + M1 Scalp both enabled
+
+
+================================================================================
+SECTION 2: FIXES ALREADY APPLIED — AGENT MUST CONFIRM IN CODE
+================================================================================
+
+Each fix below must be verified in the actual code, not just trusted from the
+description. The agent must confirm the logic is present and correct.
+
+--------------------------------------------------------------------------------
+FIX 1: Session Summary Trade Counter
+--------------------------------------------------------------------------------
+PROBLEM:
+  Session summary always showed "Trades= 0 | P&L= $0.00" even when trades were
+  confirmed executed (✅ entries logged). Counter never incremented.
+
+CLAIMED FIX:
+  trade_manager.py now counts trades correctly and includes open trades,
+  not just closed P&L.
+
+CONFIRM IN CODE:
+  In trade_manager.py — confirm the trade counter increments on each successful
+  order_send() call. Confirm session summary logs the correct count on shutdown.
+
+--------------------------------------------------------------------------------
+FIX 2: Duplicate Session Summary on Shutdown
+--------------------------------------------------------------------------------
+PROBLEM:
+  Session summary printed TWICE on every bot stop. Indicated two shutdown
+  handlers were registered somewhere.
+
+CLAIMED FIX:
+  run.py lines 560-584 now logs session summary exactly once on shutdown.
+
+CONFIRM IN CODE:
+  In run.py around lines 560-584 — confirm only one call to session summary
+  exists across KeyboardInterrupt, Exception, and finally blocks. Check that
+  no atexit or signal handler also calls it.
+
+--------------------------------------------------------------------------------
+FIX 3: Startup Warmup (No First-Bar Trades)
+--------------------------------------------------------------------------------
+PROBLEM:
+  On the 20:37 restart, 7 trades fired within 90 seconds on the current
+  incomplete candle. No warmup existed on startup.
+
+CLAIMED FIX:
+  run.py lines 376-421 adds startup warmup for both M15 swing and M1 scalp
+  to prevent entries on the first bar after launch.
+
+CONFIRM IN CODE:
+  In run.py lines 376-421 — confirm a warmup_complete flag or first-bar
+  timestamp is tracked per symbol for BOTH M1 and M15. Confirm no signal
+  fires until at least one full candle has closed after startup.
+
+--------------------------------------------------------------------------------
+FIX 4: Invalid Stops Retry with Widened SL (Error 10016)
+--------------------------------------------------------------------------------
+PROBLEM:
+  Error 10016 (Invalid Stops) fired 50+ times across one session. Bot logged
+  and skipped but NEVER adapted the SL distance. Same failing parameters were
+  retried endlessly with no change.
+
+CLAIMED FIX:
+  run.py lines 520-557 now retries ONCE with SL/TP widened to broker min stop
+  distance on a 10016 error. Does not retry infinitely.
+
+CONFIRM IN CODE:
+  In run.py lines 520-557 — confirm retry logic checks retcode == 10016, then
+  calculates:
+    new_sl = max(original_sl, entry +/- broker_min_stop * 1.2)
+  Confirm the bot retries exactly ONCE. If second attempt also fails, it must
+  log and move on — NOT enter another retry loop.
+
+--------------------------------------------------------------------------------
+FIX 5: signal_type Attribute on TradeSignal
+--------------------------------------------------------------------------------
+PROBLEM:
+  'TradeSignal' object has no attribute 'signal_type' — GBPJPY signals silently
+  failed every cycle. The dataclass was missing this field entirely.
+
+CLAIMED FIX:
+  strategy_smart.py now always sets signal_type on every TradeSignal.
+  Valid values: SWING_BUY, SWING_SELL, SCALP_BUY, SCALP_SELL.
+
+CONFIRM IN CODE:
+  In strategy_smart.py — confirm TradeSignal dataclass has signal_type as a
+  required field. Confirm every return statement in the signal functions passes
+  signal_type as one of: SWING_BUY, SWING_SELL, SCALP_BUY, SCALP_SELL.
+
+--------------------------------------------------------------------------------
+FIX 6: time_close Error on Position Monitoring
+--------------------------------------------------------------------------------
+PROBLEM:
+  'TradePosition' object has no attribute 'time_close' fired EVERY 30 seconds
+  (80+ times per session). positions_get() returns open positions which have
+  no time_close field — only closed history deals have that.
+
+CLAIMED FIX:
+  exit_detector.py now uses history_deals_get() for closed-deal detection
+  (which has a .time field). No usage of time_close remains in the codebase.
+
+CONFIRM IN CODE:
+  Search the ENTIRE codebase for 'time_close' — confirm ZERO occurrences.
+  In exit_detector.py — confirm closed trade detection uses
+  history_deals_get(date_from, date_to) and reads deal.time, not
+  position.time_close.
+
+
+================================================================================
+SECTION 3: THREE OPTIONAL FEATURES — CLARIFIED REQUEST
+================================================================================
+
+The agent previously offered these three additions. The descriptions below
+clarify exactly what is needed for each one.
+
+--------------------------------------------------------------------------------
+OPTIONAL FEATURE A: Force Close Manual Positions with SL=0 and TP=0
+--------------------------------------------------------------------------------
+WHAT THE BOT CURRENTLY DOES:
+  Detects manual trades with SL=0.00000, logs a warning, and attempts to set
+  an automatic SL. But it does NOT close the trade.
+
+WHAT IS NEEDED:
+  - If a manual position has SL=0.00000 AND TP=0.00000 (BOTH missing),
+    the bot must market-close it immediately after logging the warning.
+  - If only SL is missing (TP exists) — keep current behaviour, enforce SL.
+  - If only TP is missing — leave it open (TP is optional).
+  - Log clearly: "Force closed EURUSD ticket=XXXXXX — no SL and no TP set."
+
+--------------------------------------------------------------------------------
+OPTIONAL FEATURE B: Per-Symbol Block After Close
+--------------------------------------------------------------------------------
+WHAT THE BOT CURRENTLY DOES:
+  After a trade on a symbol closes (win or loss), the bot can immediately
+  take a new trade on that same symbol if a signal appears.
+
+WHAT IS NEEDED:
+  - After any trade on a symbol closes, block new entries on that symbol for
+    a configurable number of minutes.
+  - This applies to both auto trades AND manual trades tracked by the bot.
+  - The cooldown timer must be configurable per mode:
+      Scalp:  shorter cooldown (e.g. 5 minutes)
+      Swing:  longer cooldown  (e.g. 30 minutes)
+  - Add env variables:
+      TRADING_BOT_COOLDOWN_AFTER_CLOSE_MINS       (for scalp)
+      TRADING_BOT_SWING_COOLDOWN_AFTER_CLOSE_MINS (for swing)
+  - Log when a symbol is blocked:
+      "EURUSD blocked for 14m 32s after last close."
+
+--------------------------------------------------------------------------------
+OPTIONAL FEATURE C: Daily Profit Lockout
+--------------------------------------------------------------------------------
+WHAT THE BOT CURRENTLY DOES:
+  There is a session drawdown cap that halts new entries after a set loss.
+  There is NO equivalent protection on the profit side.
+
+WHAT IS NEEDED:
+  - Track cumulative realised P&L for the day (midnight to midnight, broker
+    server time).
+  - If daily profit reaches a configurable target (e.g. +$5.00), stop taking
+    new trades for the rest of the day.
+  - The bot must stay connected and continue monitoring open positions and
+    manual trades — just no new entries.
+  - Log clearly:
+      "Daily profit target reached ($5.00) — new entries halted for today."
+  - Add env variable:
+      TRADING_BOT_DAILY_PROFIT_TARGET_USD
+  - Reset at midnight server time (same as session drawdown reset logic).
+
+
+================================================================================
+SECTION 4: NEW FEATURE REQUEST — TRAILING STOP LOSS (PROFIT-BASED)
+================================================================================
+
+!! THIS IS THE MOST IMPORTANT NEW FEATURE. DO NOT SKIP OR SIMPLIFY. !!
+
+--------------------------------------------------------------------------------
+4.1 WHAT THIS FEATURE DOES
+--------------------------------------------------------------------------------
+Currently, if a trade moves into profit the stop loss stays at the original
+fixed price. To protect profits, the stop loss must be manually adjusted every
+time — and if the bot is left unattended, profits can reverse and turn into
+full losses.
+
+A trailing stop loss automatically moves the SL in the direction of profit as
+the trade moves favourably. It ONLY ever moves in the direction of profit —
+it NEVER moves back against the position.
+
+--------------------------------------------------------------------------------
+4.2 HOW THE OWNER MANAGES THIS MANUALLY TODAY
+--------------------------------------------------------------------------------
+Example (BUY trade on EURUSD):
+  - Entry at 1.18300
+  - Original SL at 1.18200 (risk = -$10)
+  - Price rises, floating profit reaches +$30
+  - Owner manually moves SL up to lock in $22-$27 profit
+  - If market reverses, trade closes at $22-$27 profit instead of a loss
+
+THE PROBLEM:
+  If the owner is not watching, the price can spike then reverse. Without an
+  updated SL, the full $30 profit becomes a loss. This feature automates that
+  protection entirely.
+
+--------------------------------------------------------------------------------
+4.3 EXACT BEHAVIOUR REQUIRED
+--------------------------------------------------------------------------------
+The trailing stop is triggered and managed based on floating profit in USD
+(not just pips), because the owner monitors trades in dollar terms.
+
+PARAMETER              | DESCRIPTION
+-----------------------|--------------------------------------------------------
+Activation threshold   | Trail only activates once trade reaches a minimum
+                       | floating profit (e.g. +$5.00). Below this, SL stays
+                       | at original fixed value.
+                       | Env var: TRADING_BOT_TRAIL_ACTIVATE_USD
+-----------------------|--------------------------------------------------------
+Trail distance (USD)   | Once active, SL is set to lock in:
+                       |   (current_floating_profit - trail_distance_usd)
+                       | Example: profit=$30, trail=$8 → SL locks $22 profit.
+                       | Env var: TRADING_BOT_TRAIL_DISTANCE_USD
+-----------------------|--------------------------------------------------------
+Direction rule         | SL ONLY moves in profit direction. It NEVER moves
+                       | back against the trade. If profit dips from $30 to
+                       | $25, the SL stays locked at $22 — it does NOT move
+                       | down to $17.
+-----------------------|--------------------------------------------------------
+Scope                  | Apply to ALL open positions the bot is tracking —
+                       | both auto trades AND manual trades registered by bot.
+-----------------------|--------------------------------------------------------
+Update frequency       | Check and update SL every monitoring cycle (same
+                       | cycle as position monitoring — every 30-60 seconds).
+                       | Do NOT update SL on every tick.
+-----------------------|--------------------------------------------------------
+Minimum SL step        | Only send an SL modification to MT5 if the new SL
+                       | is at least 1 pip better than the current SL.
+                       | Avoid unnecessary API calls from minor fluctuations.
+-----------------------|--------------------------------------------------------
+Logging                | Log every SL update:
+                       | "TRAIL SL UPDATED — EURUSD BUY ticket=XXXXX |
+                       |  Profit=$30.00 | SL moved to lock $22.00 profit"
+
+--------------------------------------------------------------------------------
+4.4 WORKED EXAMPLE (settings: activate=$5, trail_distance=$8)
+--------------------------------------------------------------------------------
+
+MOMENT              | FLOATING P&L | SL LOCKS      | ACTION
+--------------------|--------------|---------------|-----------------------------
+Entry               | $0.00        | None (-$10)   | Trail not active yet
+Price moves up      | +$3.00       | Still -$10    | Below $5 activate threshold
+Threshold hit       | +$5.00       | Locks $0.00   | Trail activates (break even)
+Profit grows        | +$15.00      | Locks $7.00   | $15 - $8 = $7 locked
+Profit grows more   | +$30.00      | Locks $22.00  | $30 - $8 = $22 locked
+Price dips          | +$25.00      | Stays $22.00  | NEVER moves back
+Price dips further  | +$22.00      | Trade closed  | SL hit — exits with +$22
+
+KEY RULE: Once the SL is set to lock $22, it NEVER drops below that level
+even if profit temporarily falls. It only moves UP when profit makes a
+new high.
+
+--------------------------------------------------------------------------------
+4.5 ENVIRONMENT VARIABLES TO ADD
+--------------------------------------------------------------------------------
+TRADING_BOT_ENABLE_TRAILING_SL   = true / false (master switch)
+TRADING_BOT_TRAIL_ACTIVATE_USD   = Minimum floating profit ($) before trail
+                                   activates. Suggested default: 5.00
+TRADING_BOT_TRAIL_DISTANCE_USD   = Dollars behind peak profit to lock SL at.
+                                   Suggested default: 8.00
+
+--------------------------------------------------------------------------------
+4.6 WHERE TO IMPLEMENT
+--------------------------------------------------------------------------------
+  - Add trailing SL logic inside the existing position monitoring cycle
+    (same place manual SL enforcement already runs).
+  - Suggested location: vulnerability_checker.py OR a new trail_manager.py
+  - Use mt5.order_send() with TRADE_ACTION_SLTP to modify SL in-place
+    without closing the trade.
+  - Store the "highest locked profit so far" per ticket in a dict (keyed by
+    ticket number) in memory. Reset on bot restart — that is acceptable.
+
+Implementation logic (pseudocode):
+
+    for each open position:
+        current_profit = position.profit  # floating USD P&L from MT5
+
+        if current_profit < TRAIL_ACTIVATE_USD:
+            continue  # trail not active yet, skip
+
+        desired_locked_profit = current_profit - TRAIL_DISTANCE_USD
+        # e.g. $30 - $8 = $22
+
+        previous_locked = trail_state.get(ticket, -inf)
+
+        if desired_locked_profit <= previous_locked:
+            continue  # no improvement, do not move SL backwards
+
+        # Convert desired_locked_profit to actual SL price
+        # (requires knowing pip value per lot for this symbol)
+        new_sl_price = calculate_sl_price_from_locked_profit(position, desired_locked_profit)
+
+        # Only update if new SL is at least 1 pip better than current SL
+        if abs(new_sl_price - position.sl) < symbol_point:
+            continue
+
+        # Send MT5 modification order
+        send_sl_modification(position.ticket, new_sl_price)
+
+        # Update memory
+        trail_state[ticket] = desired_locked_profit
+
+        log("TRAIL SL UPDATED — {symbol} {side} ticket={ticket} | "
+            "Profit=${current_profit:.2f} | SL moved to lock ${desired_locked_profit:.2f} profit")
+
+
+================================================================================
+SECTION 5: AGENT ACTION SUMMARY — WORK THROUGH IN THIS ORDER
+================================================================================
+
+#  | PRIORITY         | TASK
+---|------------------|----------------------------------------------------------
+1  | CONFIRM NOW      | Verify all 6 fixes in Section 2 are correctly implemented
+   |                  | in the code (not just described in comments or logs)
+---|------------------|----------------------------------------------------------
+2  | CONFIRM NOW      | Confirm session summary counter actually increments —
+   |                  | run a test cycle and verify output shows correct count
+---|------------------|----------------------------------------------------------
+3  | BUILD            | Optional Feature A: Force close manual positions where
+   |                  | BOTH SL=0 AND TP=0 (full spec in Section 3A above)
+---|------------------|----------------------------------------------------------
+4  | BUILD            | Optional Feature B: Per-symbol cooldown block after
+   |                  | close, configurable separately for scalp and swing
+   |                  | (full spec in Section 3B above)
+---|------------------|----------------------------------------------------------
+5  | BUILD            | Optional Feature C: Daily profit lockout with env
+   |                  | variable target, resets at midnight server time
+   |                  | (full spec in Section 3C above)
+---|------------------|----------------------------------------------------------
+6  | BUILD (PRIORITY) | NEW: Trailing Stop Loss — full spec in Section 4 above.
+   |                  | This is the most important new feature requested.
+---|------------------|----------------------------------------------------------
+7  | REPORT BACK      | After confirming fixes: share the actual code for each
+   |                  | fix so the implementation can be reviewed directly.
+
+================================================================================
+END OF BRIEF
+================================================================================
