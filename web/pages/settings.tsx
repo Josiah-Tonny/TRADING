@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Save, AlertCircle, Settings as SettingsIcon, RefreshCw, ArrowLeft } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use relative API routes (Next.js API routes on same domain)
+const API_URL = '';  // Empty string means use relative URLs
 
 interface Settings {
   risk_per_trade: number;

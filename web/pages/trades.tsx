@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Activity, Filter, DollarSign, Award, BarChart3, RefreshCw } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use relative API routes (Next.js API routes on same domain)
+const API_URL = '';  // Empty string means use relative URLs
 
 interface Trade {
   ticket: number;

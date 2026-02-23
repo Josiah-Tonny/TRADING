@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Menu, X, Settings, TrendingUp, DollarSign, Activity, RefreshCw, AlertCircle } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use relative API routes (Next.js API routes on same domain)
+const API_URL = '';  // Empty string means use relative URLs
 
 interface BotStatus {
   is_running: boolean;
